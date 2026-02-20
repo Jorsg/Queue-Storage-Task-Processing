@@ -1,0 +1,11 @@
+{
+  "IsEncrypted": false,
+  "Values": {
+    "AzureWebJobsStorage": "UseDevelopmentStorage=true",
+    "FUNCTIONS_WORKER_RUNTIME": "dotnet-isolated",
+    "TaskQueueName": "task-queue",
+    "PoisonQueueName": "task-queue-poison",
+    "LargePayloadContainerName": "task-payloads",
+    "APPLICATIONINSIGHTS_CONNECTION_STRING": ""
+  }
+}
