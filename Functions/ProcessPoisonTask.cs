@@ -16,7 +16,7 @@ public class ProcessPoisonTask
     }
 
     [Function(nameof(ProcessPoisonTask))]
-    public async Task Run([QueueTrigger("task-queue", Connection = "AzureStorageConnection")] string messageText)
+    public async Task Run([QueueTrigger("task-queue-poison", Connection = "AzureStorageConnection")] string messageText)
     {
         _logger.LogCritical($"POISON MESSAGE received at {DateTime.UtcNow}");
 
