@@ -9,8 +9,8 @@ public class TaskMessage
     public string Id { get; set; } = string.Empty;
     [JsonPropertyName("taskType")]
     public string TaskType { get; set; } = string.Empty;
-    [JsonPropertyName("PayLload")]
+    [JsonPropertyName("payload")]
     public JsonElement Payload { get; set; }
-    [JsonPropertyName("submitteadAt")]
+    [JsonPropertyName("submittedAt")]
     public string SubmittedAt { get; set; } = string.Empty;
 }
