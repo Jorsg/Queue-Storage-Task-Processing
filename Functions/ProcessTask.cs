@@ -1,10 +1,12 @@
 using System;
+using System.Diagnostics;
 using System.Reflection.Metadata;
 using System.Text.Json;
 using Azure.Storage.Queues;
 using Azure.Storage.Queues.Models;
 using Microsoft.Azure.Functions.Worker;
 using Microsoft.Extensions.Logging;
+using TaskQueueApp.Services;
 using TaskQueueAPP;
 
 namespace TaskQueueApp;
@@ -13,33 +15,41 @@ public class ProcessTask
 {
     private readonly ILogger<ProcessTask> _logger;
     private readonly VisibilityTimeoutService _visibilityService;
+    private readonly TaskResultService _resultService;
 
-    public ProcessTask(ILogger<ProcessTask> logger, VisibilityTimeoutService visibilityTimeoutService)
+    public ProcessTask(ILogger<ProcessTask> logger, VisibilityTimeoutService visibilityTimeoutService, TaskResultService resultService)
     {
         _logger = logger;
         _visibilityService = visibilityTimeoutService;
+        _resultService = resultService;
     }
 
     [Function(nameof(ProcessTask))]
-    public async Task Run([QueueTrigger("task-queue", Connection = "AzureStorageConnection")] string messageText, 
-                                        string Id, string popReceipt, long DequeueCount)
+    public async Task Run([QueueTrigger("task-queue", Connection = "AzureStorageConnection")] string messageText,
+                                        string Id,
+                                        string popReceipt,
+                                        long DequeueCount)
     {
-        _logger.LogInformation("Processing message {MessageId} | Attempt: {DequeueCount}/5", Id, DequeueCount);
+        // _logger.LogInformation("Processing message {MessageId} | Attempt: {DequeueCount}/5", Id, DequeueCount);
+        var stopwatch = Stopwatch.StartNew();
         QueueClient? queueClient = null;
         var isLongRunning = false;
+        TaskMessage? task = null;
 
         try
         {
             //Deserilize the message
-            var task = JsonSerializer.Deserialize<TaskMessage>(messageText);
-            if(task == null)
+            task = JsonSerializer.Deserialize<TaskMessage>(messageText);
+            if (task == null)
             {
                 _logger.LogWarning($"Failed to deserialize message {messageText}");
                 return;
             }
 
+            _logger.LogInformation($"Processing Task {task.Id} | Type: {task.TaskType} | Attempt: {DequeueCount}/5");
+
             isLongRunning = IsLongRunningTask(task.TaskType);
-            if(isLongRunning)
+            if (isLongRunning)
             {
                 var connectionString = Environment.GetEnvironmentVariable("AzureStorageConnection");
                 queueClient = new QueueClient(connectionString, "task-queue");
@@ -51,68 +61,90 @@ public class ProcessTask
                     visibilityTimeout: TimeSpan.FromMinutes(2),
                     renewInterval: TimeSpan.FromSeconds(60)
                 );
-                _logger.LogInformation("Started visibility renewal for long-running task {TaskId}", task.Id);
+                //_logger.LogInformation("Started visibility renewal for long-running task {TaskId}", task.Id);
             }
 
-            
-            _logger.LogInformation($"Processing Task Id {task.Id} | Type: {task.TaskType} | Attempt: {DequeueCount} /5");
+
+            // _logger.LogInformation($"Processing Task Id {task.Id} | Type: {task.TaskType} | Attempt: {DequeueCount} /5");
 
             if (DequeueCount >= 3)
             {
                 _logger.LogWarning($"Task {task.Id} is on {DequeueCount} /5 - may become poison");
             }
 
-            switch(task.TaskType?.ToLower())
-            {
-                case "sendemail":
-                     await HandleSendEmail(task);
-                     break;
-                case "generatereport":
-                      await HandleGenerateReport(task);
-                      break;
-                default:
-                _logger.LogWarning($"Unknow task type: {task.TaskType}");
-                break;
-            }
 
-            _logger.LogInformation($"Task {task.Id} completed successfully");
+            //Process the task
+
+            var result = task.TaskType?.ToLower() switch
+            {
+                "sendemail" => await HandleSendEmail(task),
+                "generatereport" => await HandleGenerateReport(task),
+                _ => "Unknow task type"
+            };
+
+            stopwatch.Stop();
+
+            await _resultService.SaveSuccessAsync(
+                taskId: task.Id,
+                taskType: task.TaskType ?? "Unknown",
+                submittedAt: DateTime.Parse(task.SubmittedAt),
+                payload: task.Payload.ToString(),
+                result: result,
+                attempt: (int)DequeueCount,
+                durationMs: stopwatch.Elapsed.TotalMilliseconds
+            );
+
+            _logger.LogInformation($"Task {task.Id} completed in {stopwatch.Elapsed.TotalMilliseconds}");
         }
-        catch(Exception ex)
+        catch (Exception ex)
         {
+            stopwatch.Stop();
+
+            // ❌ Save failure to Table Storage
+            if (task != null)
+            {
+                await _resultService.SaveFailureAsync(
+                    taskId: task.Id,
+                    taskType: task.TaskType,
+                    submittedAt: DateTime.Parse(task.SubmittedAt),
+                    payload: task.Payload.ToString(),
+                    errorMessage: ex.Message,
+                    attempts: (int)DequeueCount);
+            }
             _logger.LogError(ex, $"Error failed on attempt {DequeueCount}/5. Message {messageText}");
             throw;
         }
         finally
+        {
+            // Always stop renewing when done (success or failure)
+            if (isLongRunning)
             {
-                // Always stop renewing when done (success or failure)
-                if (isLongRunning)
-                {
-                    _visibilityService.StopRenewing();
-                    _logger.LogInformation("Stopped visibility renewal for message {Id}", Id);
-                }
-            }        
+                _visibilityService.StopRenewing();
+                _logger.LogInformation("Stopped visibility renewal for message {Id}", Id);
+            }
+        }
     }
 
     private bool IsLongRunningTask(string TaskType)
     {
-        var longRunningTask = new [] {"generatereport", "processfile", "datamigration"};
+        var longRunningTask = new[] { "generatereport", "processfile", "datamigration" };
         return longRunningTask.Contains(TaskType?.ToLower());
     }
 
 
-    private async Task HandleSendEmail(TaskMessage task)
+    private async Task<string> HandleSendEmail(TaskMessage task)
     {
         _logger.LogInformation($"Sending email for task {task.Id}");
         await Task.Delay(500);
-        _logger.LogInformation($"Email send for task {task.Id}"); 
-       // throw new Exception("Simulated failure for testing");
+        return $"Email sent successfuly to {task.Payload}";
+        // throw new Exception("Simulated failure for testing");
     }
 
-    private async Task HandleGenerateReport(TaskMessage task)
+    private async Task<string> HandleGenerateReport(TaskMessage task)
     {
         //TODO: Implement real report logic later
         _logger.LogInformation("Generating report for task {TaskId}...", task.Id);
         await Task.Delay(TimeSpan.FromMinutes(3)); // simulate long-running work (triggers renewals at 60s, 120s)
-        _logger.LogInformation("Report generated for task {TaskId}", task.Id);
+        return $"Report generated: report_{task.Id}.pdf";
     }
 }
