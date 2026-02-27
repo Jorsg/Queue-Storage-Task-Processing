@@ -26,12 +26,13 @@ public class TaskResultEntity: ITableEntity
 
     public static TaskResultEntity Create(string taskId, string taskType, DateTime submittedAt)
     {
+        var utcSubmittedAt = DateTime.SpecifyKind(submittedAt.ToUniversalTime(), DateTimeKind.Utc);
         return new TaskResultEntity
         {
-            PartitionKey = submittedAt.ToString("yyyy-MM-dd"),
+            PartitionKey = utcSubmittedAt.ToString("yyyy-MM-dd"),
             RowKey = taskId,
             TaskType = taskType,
-            SubmittedAt = submittedAt
+            SubmittedAt = utcSubmittedAt
         };
     }
      

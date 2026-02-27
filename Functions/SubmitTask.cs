@@ -6,16 +6,20 @@ using Microsoft.Azure.Functions.Worker.Http;
 using Microsoft.Extensions.Logging;
 using System.Net;
 using System.Text;
+using TaskQueueAPP.Models;
+using TaskQueueAPP.Services;
 
 namespace TaskQueueAPP
 {
     public class SubmitTask
     {
         private readonly ILogger<SubmitTask> _logger;
+        private readonly MetricService _metrics;
 
-        public SubmitTask(ILogger<SubmitTask> logger)
+        public SubmitTask(ILogger<SubmitTask> logger, MetricService metrics)
         {
             _logger = logger;
+            _metrics = metrics;
         }
 
         [Function("SubmitTask")]
@@ -48,6 +52,8 @@ namespace TaskQueueAPP
             var jsonMessage = JsonSerializer.Serialize(message);
             var base64Message = Convert.ToBase64String(Encoding.UTF8.GetBytes(jsonMessage));
             await queueClient.SendMessageAsync(base64Message);
+
+            _metrics.TrackTaskSubmitted(TaskId, body.TaskType);
 
             _logger.LogInformation($"Task enqueue: {TaskId}");
 

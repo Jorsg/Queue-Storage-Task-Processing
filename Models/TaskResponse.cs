@@ -1,3 +1,4 @@
+namespace TaskQueueAPP.Models;
 public class TaskResponse
 {
     public bool Success { get; set; }

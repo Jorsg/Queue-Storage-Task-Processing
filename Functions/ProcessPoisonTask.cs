@@ -3,19 +3,23 @@ using System.Text.Json;
 using Azure.Storage.Queues.Models;
 using Microsoft.Azure.Functions.Worker;
 using Microsoft.Extensions.Logging;
-using TaskQueueApp.Services;
+using TaskQueueAPP.Services;
+using TaskQueueAPP.Models;
 
-namespace TaskQueueApp;
+namespace TaskQueueAPP;
 
 public class ProcessPoisonTask
 {
     private readonly ILogger<ProcessPoisonTask> _logger;
     private readonly TaskResultService _resultService;
+    private readonly MetricService _metrics;
 
-    public ProcessPoisonTask(ILogger<ProcessPoisonTask> logger, TaskResultService resultService)
+    public ProcessPoisonTask(ILogger<ProcessPoisonTask> logger, TaskResultService resultService,
+                             MetricService metrics)
     {
         _logger = logger;
         _resultService = resultService;
+        _metrics = metrics;
     }
 
     [Function(nameof(ProcessPoisonTask))]
@@ -39,6 +43,7 @@ public class ProcessPoisonTask
                         errorMessage: "Message exceeded maximum retry attempts (5)");
 
                 await NotifyTeam(task);
+                _metrics.TrackTaskPoisoned(task.Id, task.TaskType);
 
                 
             }
