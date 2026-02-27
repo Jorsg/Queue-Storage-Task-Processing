@@ -1,7 +1,7 @@
 using System.Text.Json;
 using System.Text.Json.Serialization;
 
-namespace TaskQueueApp;
+namespace TaskQueueAPP.Models;
 
 public class TaskMessage
 {

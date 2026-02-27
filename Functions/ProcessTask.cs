@@ -6,22 +6,26 @@ using Azure.Storage.Queues;
 using Azure.Storage.Queues.Models;
 using Microsoft.Azure.Functions.Worker;
 using Microsoft.Extensions.Logging;
-using TaskQueueApp.Services;
-using TaskQueueAPP;
+using TaskQueueAPP.Services;
+using TaskQueueAPP.Models;
 
-namespace TaskQueueApp;
+namespace TaskQueueAPP;
 
 public class ProcessTask
 {
     private readonly ILogger<ProcessTask> _logger;
     private readonly VisibilityTimeoutService _visibilityService;
     private readonly TaskResultService _resultService;
+    private readonly MetricService _metrics;
 
-    public ProcessTask(ILogger<ProcessTask> logger, VisibilityTimeoutService visibilityTimeoutService, TaskResultService resultService)
+    public ProcessTask(ILogger<ProcessTask> logger, VisibilityTimeoutService visibilityTimeoutService, 
+                       TaskResultService resultService,
+                       MetricService metrics)
     {
         _logger = logger;
         _visibilityService = visibilityTimeoutService;
         _resultService = resultService;
+        _metrics = metrics;
     }
 
     [Function(nameof(ProcessTask))]
@@ -94,13 +98,14 @@ public class ProcessTask
                 durationMs: stopwatch.Elapsed.TotalMilliseconds
             );
 
+            _metrics.TrackTaskCompleted(task.Id, task.TaskType ?? "Unknown", stopwatch.Elapsed.TotalMilliseconds, (int)DequeueCount);
             _logger.LogInformation($"Task {task.Id} completed in {stopwatch.Elapsed.TotalMilliseconds}");
         }
         catch (Exception ex)
         {
             stopwatch.Stop();
 
-            // ❌ Save failure to Table Storage
+            // Save failure to Table Storage
             if (task != null)
             {
                 await _resultService.SaveFailureAsync(
@@ -110,6 +115,8 @@ public class ProcessTask
                     payload: task.Payload.ToString(),
                     errorMessage: ex.Message,
                     attempts: (int)DequeueCount);
+
+                    _metrics.TrackTaskFailed(task.Id, task.TaskType, ex.Message, (int)DequeueCount);
             }
             _logger.LogError(ex, $"Error failed on attempt {DequeueCount}/5. Message {messageText}");
             throw;

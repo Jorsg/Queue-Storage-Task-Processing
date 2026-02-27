@@ -2,7 +2,7 @@ using Azure.Data.Tables;
 using Microsoft.Extensions.Logging;
 using TaskQueueAPP.Models;
 
-namespace TaskQueueApp.Services
+namespace TaskQueueAPP.Services
 {
     public class TaskResultService
     {

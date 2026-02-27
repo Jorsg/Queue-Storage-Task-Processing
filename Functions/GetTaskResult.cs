@@ -3,7 +3,7 @@ using Azure;
 using Microsoft.Azure.Functions.Worker;
 using Microsoft.Azure.Functions.Worker.Http;
 using Microsoft.Extensions.Logging;
-using TaskQueueApp.Services;
+using TaskQueueAPP.Services;
 
 namespace TaskQueueAPP
 {
